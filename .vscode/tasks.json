@@ -15,7 +15,7 @@
       },
       "problemMatcher": [
         {
-          "base": "$ts-webpack-watch",
+          "base": "$tsc-watch",
           "background": {
             "activeOnStart": true,
             "beginsPattern": "ready in",
@@ -38,7 +38,7 @@
       },
       "problemMatcher": [
         {
-          "base": "$ts-webpack-watch",
+          "base": "$tsc-watch",
           "background": {
             "activeOnStart": true,
             "beginsPattern": "Build start",

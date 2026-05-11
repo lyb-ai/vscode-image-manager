@@ -1,7 +1,7 @@
 import type { GlobEntry } from 'globby'
 import type { SharpNS } from '~/@types/global'
 import path from 'node:path'
-import { isString } from 'antd/es/button'
+import { isString } from 'es-toolkit'
 import readExif from 'exif-reader'
 import fs from 'fs-extra'
 import { imageSizeFromFile } from 'image-size/fromFile'

@@ -98,4 +98,6 @@ export enum CmdToVscode {
   open_svgo_config = 'open_svgo_config',
   // 获取图片的metadata/git staged等信息
   get_images_extra_info = 'get_images_extra_info',
+  // 检查图片是否在工作区中被使用
+  check_image_usages = 'check_image_usages',
 }

@@ -1,17 +1,21 @@
 import { useMemoizedFn } from 'ahooks'
 import { Button, Popover, Space, Tooltip } from 'antd'
-import { upperFirst } from 'es-toolkit'
-import { useSetAtom } from 'jotai'
+import { flatten, upperFirst } from 'es-toolkit'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IoIosMore } from 'react-icons/io'
+import useImageOperation from '~/webview/image-manager/hooks/use-image-operation'
 import { ActionAtoms } from '~/webview/image-manager/stores/action/action-store'
+import { GlobalAtoms } from '~/webview/image-manager/stores/global/global-store'
 
 function More() {
   const { t } = useTranslation()
 
   const openAllCollapse = useSetAtom(ActionAtoms.openAllCollapse)
   const closeAllCollapse = useSetAtom(ActionAtoms.closeAllCollapse)
+  const workspaceImages = useAtomValue(GlobalAtoms.workspaceImagesAtom)
+  const { beginCheckImageUsageProcess } = useImageOperation()
 
   const [open, setOpen] = useState(false)
 
@@ -19,6 +23,17 @@ function More() {
     open
       ? openAllCollapse()
       : closeAllCollapse()
+  })
+
+  const checkImageUsages = useMemoizedFn(() => {
+    const images = flatten(workspaceImages.map(item => item.images))
+    if (!images.length) {
+      setOpen(false)
+      return
+    }
+
+    setOpen(false)
+    beginCheckImageUsageProcess(images)
   })
 
   return (
@@ -56,6 +71,10 @@ function More() {
                 {t('im.collapse')}
               </Button>
             </Space.Compact>
+          </div>
+          <div className='flex items-center justify-between gap-2'>
+            <div>{t('im.check_image_usages')}</div>
+            <Button onClick={checkImageUsages}>{t('im.scan')}</Button>
           </div>
         </div>
       )}

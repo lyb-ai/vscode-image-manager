@@ -138,7 +138,7 @@ function ImageCollapse(props: ImageCollapseProps) {
 
   const sameWorkspaceImages = useMemo(() => {
     return workspaceImages.find(item => item.workspaceFolder === workspaceFolder)?.images
-  }, [workspaceImages])
+  }, [workspaceImages, workspaceFolder])
 
   const stickyRef = useRef<HTMLDivElement>(null)
   const holderRef = useRef<HTMLDivElement>(null)

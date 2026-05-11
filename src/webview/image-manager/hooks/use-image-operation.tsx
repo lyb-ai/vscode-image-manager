@@ -19,6 +19,7 @@ import { useWorkspaceState } from '~/webview/image-manager/hooks/use-workspace-s
 import { vscodeApi } from '~/webview/vscode-api'
 import { FileAtoms } from '../stores/file/file-store'
 import { useFileActions } from '../stores/file/hooks'
+import { useUsageActions } from '../stores/usage/hooks'
 import { VscodeAtoms } from '../stores/vscode/vscode-store'
 import { pathUtil } from '../utils'
 import { LOADING_DURATION } from '../utils/duration'
@@ -28,6 +29,7 @@ import useImageConverter from './use-image-converter/use-image-converter'
 import useImageCropper from './use-image-cropper/use-image-cropper'
 import useImageManagerEvent, { IMEvent } from './use-image-manager-event'
 import useImageSimilarity from './use-image-similarity/use-image-similarity'
+import useImageUsageCheck from './use-image-usage-check/use-image-usage-check'
 import useRenameImages from './use-rename-images/use-rename-images'
 import useRename from './use-rename/use-rename'
 
@@ -57,6 +59,7 @@ function UndoMessageContent(props: { list: string[], title: ReactNode }) {
 function useImageOperation() {
   const { notification, message } = App.useApp()
   const { t } = useTranslation()
+  const { start: startUsageScan, finish: finishUsageScan } = useUsageActions()
 
   const openInVscodeExplorer = useMemoizedFn((filePath: string) => {
     vscodeApi.postMessage({ cmd: CmdToVscode.open_image_in_vscode_explorer, data: { filePath } })
@@ -161,6 +164,7 @@ function useImageOperation() {
   )
 
   const { isOpened: isSimilarityOpened, showImageSimilarity } = useImageSimilarity()
+  const { showImageUsageCheck } = useImageUsageCheck()
   const beginFindSimilarProcess = useLockFn(async (image: ImageType, images: ImageType[]) => {
     const loadingKey = 'similarity-loading'
     const timer = setTimeout(() => {
@@ -209,6 +213,49 @@ function useImageOperation() {
         },
       })
     }
+  })
+
+  const beginCheckImageUsageProcess = useLockFn(async (images: ImageType[]) => {
+    showImageUsageCheck({
+      onScan: async () => {
+        const payloadImages = images.map(image => ({
+          basename: image.basename,
+          name: image.name,
+          extname: image.extname,
+          path: image.path,
+          stats: image.stats,
+          dirPath: image.dirPath,
+          absDirPath: image.absDirPath,
+          relativePath: image.relativePath,
+          vscodePath: image.vscodePath,
+          key: image.key,
+          workspaceFolder: image.workspaceFolder,
+          absWorkspaceFolder: image.absWorkspaceFolder,
+          info: image.info,
+        }))
+
+        startUsageScan()
+        return new Promise<void>((resolve) => {
+          vscodeApi.postMessage(
+            {
+              cmd: CmdToVscode.check_image_usages,
+              data: {
+                images: payloadImages,
+              },
+            },
+            (res) => {
+              finishUsageScan(
+                res.map(item => ({
+                  ...item,
+                  image: images.find(image => image.path === item.imagePath)!,
+                })),
+              )
+              resolve()
+            },
+          )
+        })
+      },
+    })
   })
 
   const deleteFile = useLockFn(
@@ -681,6 +728,7 @@ function useImageOperation() {
     cropImage,
     prettySvg,
     beginFindSimilarProcess,
+    beginCheckImageUsageProcess,
     beginDeleteImageProcess,
     beginDeleteDirProcess,
     beginRenameImageProcess,

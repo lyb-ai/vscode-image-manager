@@ -20,6 +20,7 @@ import { nanoid } from 'nanoid'
 import pMap from 'p-map'
 import { commands, Uri, ViewColumn, window, workspace } from 'vscode'
 import { Commands } from '~/commands'
+import { checkImageUsages } from '~/core/analysis/image-usage'
 import { Similarity } from '~/core/analysis/similarity'
 import { commandCache } from '~/core/commander'
 import { Config } from '~/core/config/config'
@@ -324,6 +325,29 @@ export const VscodeMessageFactory = {
     return {
       ext: config,
       vscode: vscodeConfig,
+    }
+  },
+
+  [CmdToVscode.check_image_usages]: async (
+    data: {
+      images: ImageType[]
+    },
+    imageManagerPanel: ImageManagerPanel,
+  ) => {
+    try {
+      return await checkImageUsages({
+        images: data.images,
+        roots: imageManagerPanel.initialData.rootpaths || [],
+      })
+    }
+    catch (e) {
+      logger.error(e)
+      return data.images.map(image => ({
+        imagePath: image.path,
+        status: 'error' as const,
+        references: [],
+        matchedCount: 0,
+      }))
     }
   },
 

@@ -7,7 +7,6 @@ import { produce } from 'immer'
 import { useSetAtom } from 'jotai'
 import { memo, startTransition, useEffect, useRef, useState } from 'react'
 import { DisplayGroupType, DisplayStyleType } from '~/core/persist/workspace/common'
-import logger from '~/utils/logger'
 import useUpdateDeepEffect from '../../hooks/use-update-deep-effect'
 import useUpdateImages from '../../hooks/use-update-images'
 import { useWhyUpdateDebug } from '../../hooks/use-why-update-debug'
@@ -15,6 +14,7 @@ import { ActionAtoms } from '../../stores/action/action-store'
 import { useImageFilter } from '../../stores/action/hooks'
 import { GlobalAtoms } from '../../stores/global/global-store'
 import { useDisplayGroup, useDisplayStyle, useSort } from '../../stores/settings/hooks'
+import { useUsageActions } from '../../stores/usage/hooks'
 import { UpdateType } from '../../utils/tree/const'
 import { TreeStyle } from '../../utils/tree/tree'
 import { TreeManager } from '../../utils/tree/tree-manager'
@@ -35,6 +35,7 @@ function CollapseTree(props: Props) {
   useWhyUpdateDebug('CollapseTree', props)
 
   const { resetPartialState } = useUpdateImages()
+  const { markStale: markUsageStale } = useUsageActions()
 
   const treeManager = useRef<TreeManager>()
 
@@ -50,12 +51,17 @@ function CollapseTree(props: Props) {
   const notifyCollapseChange = useSetAtom(ActionAtoms.notifyCollapseChange)
 
   const afterUpdate = useMemoizedFn(async () => {
-    const nestedTree = await treeManager.current?.toNestedArray()
+    const currentTreeManager = treeManager.current
+    if (!currentTreeManager) {
+      return
+    }
+
+    const nestedTree = await currentTreeManager.toNestedArray()
     resetPartialState()
     setNestedTree(nestedTree || [])
 
     // 获取当前工作区的可见图片列表
-    const images = flatten(treeManager.current!.toArray(nestedTree || [], node => node.data.images || []))
+    const images = flatten(currentTreeManager.toArray(nestedTree || [], node => node.data.images || []))
     setWorkspaceImages(
       produce((draft) => {
         const index = draft.findIndex(t => t.workspaceFolder === workspace.workspaceFolder)
@@ -90,7 +96,6 @@ function CollapseTree(props: Props) {
     const treeStyle = displayGroupToTreeStyle(displayGroup)
 
     const isCompact = displayStyle === DisplayStyleType.compact
-    logger.debug('紧凑模式: ', isCompact)
 
     treeManager.current = new TreeManager(workspace.workspaceFolder, {
       compact: isCompact,
@@ -115,6 +120,7 @@ function CollapseTree(props: Props) {
           break
       }
 
+      markUsageStale()
       afterUpdate()
     }
   }, [workspace.images, workspace.update])
