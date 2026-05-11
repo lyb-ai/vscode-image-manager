@@ -1,7 +1,9 @@
+import type { MessageInstance } from 'antd/es/message/interface'
 import type { ReactNode } from 'react'
 import type { FileChangedResType } from '../stores/file/hooks'
+import type { ImageUsageScanResult } from './use-image-usage-check/types'
 import type { OperatorResult } from '~/core/operator/operator'
-import { useLockFn, useMemoizedFn } from 'ahooks'
+import { useLatest, useLockFn, useMemoizedFn } from 'ahooks'
 import { App, Button, Divider, Space, Typography } from 'antd'
 import { isString, lowerCase } from 'es-toolkit'
 import { isObject, toString } from 'es-toolkit/compat'
@@ -19,7 +21,7 @@ import { useWorkspaceState } from '~/webview/image-manager/hooks/use-workspace-s
 import { vscodeApi } from '~/webview/vscode-api'
 import { FileAtoms } from '../stores/file/file-store'
 import { useFileActions } from '../stores/file/hooks'
-import { useUsageActions } from '../stores/usage/hooks'
+import { useUsageActions, useUsageState } from '../stores/usage/hooks'
 import { VscodeAtoms } from '../stores/vscode/vscode-store'
 import { pathUtil } from '../utils'
 import { LOADING_DURATION } from '../utils/duration'
@@ -34,6 +36,7 @@ import useRenameImages from './use-rename-images/use-rename-images'
 import useRename from './use-rename/use-rename'
 
 const { Text } = Typography
+let isCheckingImageUsage = false
 
 // eslint-disable-next-line react-refresh/only-export-components
 function UndoMessageContent(props: { list: string[], title: ReactNode }) {
@@ -59,7 +62,9 @@ function UndoMessageContent(props: { list: string[], title: ReactNode }) {
 function useImageOperation() {
   const { notification, message } = App.useApp()
   const { t } = useTranslation()
-  const { start: startUsageScan, finish: finishUsageScan } = useUsageActions()
+  const usageState = useUsageState()
+  const latestUsageStatus = useLatest(usageState.status)
+  const { start: startUsageScan, finish: finishUsageScan, fail: failUsageScan } = useUsageActions()
 
   const openInVscodeExplorer = useMemoizedFn((filePath: string) => {
     vscodeApi.postMessage({ cmd: CmdToVscode.open_image_in_vscode_explorer, data: { filePath } })
@@ -217,7 +222,13 @@ function useImageOperation() {
 
   const beginCheckImageUsageProcess = useLockFn(async (images: ImageType[]) => {
     showImageUsageCheck({
-      onScan: async () => {
+      onScan: async (messageApi: MessageInstance) => {
+        if (isCheckingImageUsage || latestUsageStatus.current === 'checking') {
+          return
+        }
+
+        isCheckingImageUsage = true
+        const messageKey = 'image-usage-scan'
         const payloadImages = images.map(image => ({
           basename: image.basename,
           name: image.name,
@@ -235,25 +246,64 @@ function useImageOperation() {
         }))
 
         startUsageScan()
-        return new Promise<void>((resolve) => {
-          vscodeApi.postMessage(
-            {
-              cmd: CmdToVscode.check_image_usages,
-              data: {
-                images: payloadImages,
-              },
-            },
-            (res) => {
-              finishUsageScan(
-                res.map(item => ({
-                  ...item,
-                  image: images.find(image => image.path === item.imagePath)!,
-                })),
-              )
-              resolve()
-            },
-          )
+        messageApi.open({
+          key: messageKey,
+          type: 'loading',
+          content: t('im.scanning_workspace_references'),
+          duration: 0,
         })
+
+        try {
+          const res = await new Promise<ImageUsageScanResult>((resolve) => {
+            vscodeApi.postMessage(
+              {
+                cmd: CmdToVscode.check_image_usages,
+                data: {
+                  images: payloadImages,
+                },
+              },
+              (data) => {
+                resolve(data as ImageUsageScanResult)
+              },
+            )
+          })
+
+          const records = res.records.map(item => ({
+            ...item,
+            image: images.find(image => image.path === item.imagePath)!,
+          }))
+
+          if (records.some(item => item.status === 'error')) {
+            failUsageScan()
+            messageApi.open({
+              key: messageKey,
+              type: 'error',
+              content: t('im.usage_scan_failed'),
+              duration: 2,
+            })
+            return
+          }
+
+          finishUsageScan(records, res.scannedFileCount)
+          messageApi.open({
+            key: messageKey,
+            type: 'success',
+            content: t('im.usage_scan_completed'),
+            duration: 2,
+          })
+        }
+        catch {
+          failUsageScan()
+          messageApi.open({
+            key: messageKey,
+            type: 'error',
+            content: t('im.usage_scan_failed'),
+            duration: 2,
+          })
+        }
+        finally {
+          isCheckingImageUsage = false
+        }
       },
     })
   })

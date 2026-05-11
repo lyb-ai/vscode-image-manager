@@ -29,6 +29,11 @@ export type ImageUsageResult = {
   matchedCount: number
 }
 
+export type ImageUsageScanResult = {
+  records: ImageUsageResult[]
+  scannedFileCount: number
+}
+
 function normalizePath(filePath: string) {
   return slashPath(filePath)
 }
@@ -122,7 +127,7 @@ export async function checkImageUsages(options: {
     }
   }
 
-  return images.map<ImageUsageResult>((image) => {
+  const resultRecords = images.map<ImageUsageResult>((image) => {
     const record = records.get(image.path)
     const references = Array.from(record?.references || [])
 
@@ -133,4 +138,9 @@ export async function checkImageUsages(options: {
       matchedCount: references.length,
     }
   })
+
+  return {
+    records: resultRecords,
+    scannedFileCount: normalizedTextFiles.length,
+  } satisfies ImageUsageScanResult
 }

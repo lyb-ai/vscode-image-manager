@@ -342,12 +342,15 @@ export const VscodeMessageFactory = {
     }
     catch (e) {
       logger.error(e)
-      return data.images.map(image => ({
-        imagePath: image.path,
-        status: 'error' as const,
-        references: [],
-        matchedCount: 0,
-      }))
+      return {
+        scannedFileCount: 0,
+        records: data.images.map(image => ({
+          imagePath: image.path,
+          status: 'error' as const,
+          references: [],
+          matchedCount: 0,
+        })),
+      }
     }
   },
 
@@ -390,7 +393,7 @@ export const VscodeMessageFactory = {
         const files = fs.readdirSync(revealPath)
         revealPath = path.join(revealPath, files[0])
       }
-      catch {}
+      catch { }
     }
 
     const res = await commands.executeCommand('revealFileInOS', Uri.file(revealPath))

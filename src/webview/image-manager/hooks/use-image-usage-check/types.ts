@@ -7,6 +7,11 @@ export type ImageUsageResult = {
   matchedCount: number
 }
 
+export type ImageUsageScanResult = {
+  records: ImageUsageResult[]
+  scannedFileCount: number
+}
+
 export type ImageUsageRecord = ImageUsageResult & {
   image: ImageType
 }

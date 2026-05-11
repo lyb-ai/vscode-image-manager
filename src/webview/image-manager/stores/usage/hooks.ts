@@ -14,8 +14,12 @@ export function useUsageActions() {
     dispatch({ type: UsageActionType.start })
   })
 
-  const finish = useMemoizedFn((records: ImageUsageRecord[]) => {
-    dispatch({ type: UsageActionType.finish, records })
+  const finish = useMemoizedFn((records: ImageUsageRecord[], scannedFileCount: number) => {
+    dispatch({ type: UsageActionType.finish, records, scannedFileCount })
+  })
+
+  const fail = useMemoizedFn(() => {
+    dispatch({ type: UsageActionType.fail })
   })
 
   const markStale = useMemoizedFn(() => {
@@ -29,6 +33,7 @@ export function useUsageActions() {
   return {
     start,
     finish,
+    fail,
     markStale,
     reset,
   }
