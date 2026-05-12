@@ -29,6 +29,7 @@ enum IMAGE_CONTEXT_MENU {
   open_in_os_explorer = 'open_in_os_explorer',
   open_in_vscode_explorer = 'open_in_vscode_explorer',
   reveal_in_viewer = 'reveal_in_viewer',
+  check_usage = 'check_usage',
   copy = 'copy',
   cut = 'cut',
   compress = 'compress',
@@ -59,6 +60,11 @@ const defaultImageContextMenu = {
    * @default true
    */
   [IMAGE_CONTEXT_MENU.reveal_in_viewer]: true,
+  /**
+   * 检查图片引用
+   * @default true
+   */
+  [IMAGE_CONTEXT_MENU.check_usage]: true,
   /**
    * 复制
    * @default false
@@ -152,6 +158,7 @@ function ImageContextMenu() {
     beginDeleteImageProcess,
     beginRenameImageProcess,
     beginRevealInViewer,
+    beginCheckImageUsageProcess,
     beginCopyProcess,
     beginCutProcess,
   } = useImageOperation()
@@ -254,6 +261,13 @@ function ImageContextMenu() {
         <Item onClick={handleOpenInVscodeExplorer}>{t('im.reveal_in_explorer')}</Item>
         <Item onClick={handleRevealInViewer} hidden={isItemHidden} data={IMAGE_CONTEXT_MENU.reveal_in_viewer}>
           {t('im.reveal_in_viewer')}
+        </Item>
+        <Item
+          onClick={e => beginCheckImageUsageProcess([e.props!.image])}
+          hidden={isItemHidden}
+          data={IMAGE_CONTEXT_MENU.check_usage}
+        >
+          {t('im.check_image_usages')}
         </Item>
 
         {/* 按照vscode的交互，复制/剪切是单独分组的 */}

@@ -66,6 +66,10 @@ function useImageOperation() {
   const latestUsageStatus = useLatest(usageState.status)
   const { start: startUsageScan, finish: finishUsageScan, fail: failUsageScan } = useUsageActions()
 
+  const openFileInTextEditor = useMemoizedFn((filePath: string, line?: number, column?: number) => {
+    return vscodeApi.postMessage({ cmd: CmdToVscode.open_file_in_text_editor, data: { filePath, line, column } })
+  })
+
   const openInVscodeExplorer = useMemoizedFn((filePath: string) => {
     vscodeApi.postMessage({ cmd: CmdToVscode.open_image_in_vscode_explorer, data: { filePath } })
   })
@@ -221,6 +225,10 @@ function useImageOperation() {
   })
 
   const beginCheckImageUsageProcess = useLockFn(async (images: ImageType[]) => {
+    if (!images.length) {
+      return
+    }
+
     showImageUsageCheck({
       onScan: async (messageApi: MessageInstance) => {
         if (isCheckingImageUsage || latestUsageStatus.current === 'checking') {
@@ -268,10 +276,16 @@ function useImageOperation() {
             )
           })
 
-          const records = res.records.map(item => ({
-            ...item,
-            image: images.find(image => image.path === item.imagePath)!,
-          }))
+          const recordByPath = usageState.records
+          const records = res.records.map((item) => {
+            const image = images.find(image => image.path === item.imagePath)
+              || recordByPath[item.imagePath]?.image
+
+            return {
+              ...item,
+              image: image!,
+            }
+          })
 
           if (records.some(item => item.status === 'error')) {
             failUsageScan()
@@ -769,6 +783,7 @@ function useImageOperation() {
   })
 
   return {
+    openFileInTextEditor,
     openInVscodeExplorer,
     openInOsExplorer,
     handleCopyString,

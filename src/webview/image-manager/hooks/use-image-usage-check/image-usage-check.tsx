@@ -3,7 +3,9 @@ import { Alert, Button, Divider, List, message, Space, Tag, Typography } from 'a
 import dayjs from 'dayjs'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CmdToVscode } from '~/message/cmd'
 import { slashPath } from '~/utils'
+import { vscodeApi } from '~/webview/vscode-api'
 import EmptyImage from '../../components/empty'
 import { useUsageState } from '../../stores/usage/hooks'
 
@@ -62,9 +64,12 @@ function ImageUsageCheck(props: Props) {
     }
 
     return activeRecord.references.map((reference) => {
-      const normalizedReference = slashPath(reference)
+      const normalizedReference = slashPath(reference.filePath)
       const relativePath = slashPath(normalizedReference.replace(`${slashPath(activeRecord.image.absWorkspaceFolder)}/`, ''))
-      return `./${relativePath}`
+      return {
+        ...reference,
+        relativePath: `./${relativePath}`,
+      }
     })
   }, [activeRecord])
 
@@ -110,7 +115,7 @@ function ImageUsageCheck(props: Props) {
     return null
   }, [hasFailedResult, hasScannedResult, records.length, t, usageState.scannedFileCount])
 
-  const shouldShowResultPanel = hasScannedResult && !hasFailedResult && records.length > 0 && usageState.scannedFileCount > 0
+  const shouldShowResultPanel = records.length > 0 && usageState.scannedFileCount > 0
 
   return (
     <>
@@ -143,7 +148,7 @@ function ImageUsageCheck(props: Props) {
           <Alert type='error' showIcon message={t('im.usage_scan_failed')} />
         )}
 
-        {hasScannedResult && (
+        {(hasScannedResult || records.length > 0) && (
           <Space wrap>
             <Tag>
               {t('im.total_images')}
@@ -164,7 +169,7 @@ function ImageUsageCheck(props: Props) {
               {usedRecords.length}
             </Tag>
             <Tag color='warning'>
-              {t('im.unused')}
+              {t('im.possibly_unused')}
               :
               {' '}
               {unusedRecords.length}
@@ -176,9 +181,9 @@ function ImageUsageCheck(props: Props) {
           ? (
               <div className='grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4'>
                 <div className='min-h-0 overflow-auto rounded border border-solid border-[var(--ant-color-border-secondary)] p-3'>
-                  <div className='mb-2 text-sm font-medium'>{t('im.unused')}</div>
+                  <div className='mb-2 text-sm font-medium'>{t('im.possibly_unused')}</div>
                   <List
-                    locale={{ emptyText: <EmptyImage render={() => t('im.no_unused_images')} /> }}
+                    locale={{ emptyText: <EmptyImage render={() => t('im.no_possibly_unused_images')} /> }}
                     dataSource={unusedRecords}
                     renderItem={item => (
                       <List.Item className='cursor-pointer' onClick={() => setActivePath(item.imagePath)}>
@@ -230,7 +235,25 @@ function ImageUsageCheck(props: Props) {
                                   dataSource={activeReferences}
                                   renderItem={reference => (
                                     <List.Item>
-                                      <Text code>{reference}</Text>
+                                      <Button
+                                        type='link'
+                                        className='!px-0'
+                                        onClick={() => {
+                                          vscodeApi.postMessage({
+                                            cmd: CmdToVscode.open_file_in_text_editor,
+                                            data: {
+                                              filePath: reference.filePath,
+                                              line: reference.line,
+                                              column: reference.column,
+                                            },
+                                          })
+                                        }}
+                                      >
+                                        <Text code>{reference.relativePath}</Text>
+                                        <Text type='secondary'>
+                                          {`:${reference.line}:${reference.column}`}
+                                        </Text>
+                                      </Button>
                                     </List.Item>
                                   )}
                                 />

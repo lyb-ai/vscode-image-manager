@@ -18,7 +18,7 @@ import micromatch from 'micromatch'
 import mime from 'mime/lite'
 import { nanoid } from 'nanoid'
 import pMap from 'p-map'
-import { commands, Uri, ViewColumn, window, workspace } from 'vscode'
+import { commands, Position, Selection, Uri, ViewColumn, window, workspace } from 'vscode'
 import { Commands } from '~/commands'
 import { checkImageUsages } from '~/core/analysis/image-usage'
 import { Similarity } from '~/core/analysis/similarity'
@@ -753,10 +753,14 @@ export const VscodeMessageFactory = {
     return true
   },
   /* --------- open file in text editor --------- */
-  [CmdToVscode.open_file_in_text_editor]: async (data: { filePath: string }) => {
-    const { filePath } = data
+  [CmdToVscode.open_file_in_text_editor]: async (data: { filePath: string, line?: number, column?: number }) => {
+    const { filePath, line, column } = data
     const document = await workspace.openTextDocument(Uri.file(filePath))
-    await window.showTextDocument(document, ViewColumn.Active)
+    const position = new Position(Math.max((line || 1) - 1, 0), Math.max((column || 1) - 1, 0))
+    await window.showTextDocument(document, {
+      viewColumn: ViewColumn.Active,
+      selection: new Selection(position, position),
+    })
     return true
   },
   /* ---------------- delete file/dir --------------- */

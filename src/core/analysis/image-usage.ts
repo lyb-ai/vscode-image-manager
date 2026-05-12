@@ -22,10 +22,17 @@ const DEFAULT_IGNORE_GLOBS = [
   '**/dist-webview/**',
 ]
 
+export type ImageUsageReference = {
+  filePath: string
+  line: number
+  column: number
+  text: string
+}
+
 export type ImageUsageResult = {
   imagePath: string
   status: 'used' | 'unused' | 'error'
-  references: string[]
+  references: ImageUsageReference[]
   matchedCount: number
 }
 
@@ -46,12 +53,15 @@ function stripLeadingSlash(filePath: string) {
   return filePath.replace(/^\//, '')
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function buildImageReferenceCandidates(image: ImageType, projectRoot: string) {
   const workspaceRelative = normalizePath(path.relative(image.absWorkspaceFolder, image.path))
   const projectRelative = normalizePath(path.relative(projectRoot, image.path))
 
-  const candidates = [
-    image.basename,
+  const exactCandidates = [
     image.relativePath,
     stripDotSlash(image.relativePath),
     workspaceRelative,
@@ -63,12 +73,100 @@ function buildImageReferenceCandidates(image: ImageType, projectRoot: string) {
     normalizePath(path.join(image.workspaceFolder, workspaceRelative)),
   ]
 
-  return Array.from(new Set(candidates.filter(Boolean))).sort((a, b) => b.length - a.length)
+  return {
+    basename: image.basename,
+    exact: Array.from(new Set(exactCandidates.filter(Boolean))).sort((a, b) => b.length - a.length),
+  }
 }
 
 function shouldIgnoreFile(filePath: string, imagePathSet: Set<string>) {
   const normalized = normalizePath(filePath)
   return imagePathSet.has(normalized)
+}
+
+function getLineAndColumn(content: string, index: number) {
+  const before = content.slice(0, index)
+  const lines = before.split('\n')
+  return {
+    line: lines.length,
+    column: (lines.at(-1)?.length || 0) + 1,
+  }
+}
+
+function createReference(filePath: string, content: string, matchIndex: number, matchText: string): ImageUsageReference {
+  const { line, column } = getLineAndColumn(content, matchIndex)
+  return {
+    filePath,
+    line,
+    column,
+    text: matchText,
+  }
+}
+
+function collectExactReferences(filePath: string, content: string, candidates: string[]) {
+  const references: ImageUsageReference[] = []
+
+  for (const candidate of candidates) {
+    const pattern = new RegExp(escapeRegExp(candidate), 'g')
+
+    while (true) {
+      const match = pattern.exec(content)
+      if (!match) {
+        break
+      }
+      references.push(createReference(filePath, content, match.index, match[0]))
+    }
+  }
+
+  return references
+}
+
+function collectBasenameReferences(filePath: string, content: string, basename: string) {
+  const references: ImageUsageReference[] = []
+  const pattern = new RegExp(`(?<![\\w./-])${escapeRegExp(basename)}(?![\\w./-])`, 'g')
+
+  while (true) {
+    const match = pattern.exec(content)
+    if (!match) {
+      break
+    }
+    references.push(createReference(filePath, content, match.index, match[0]))
+  }
+
+  return references
+}
+
+function dedupeReferences(references: ImageUsageReference[]) {
+  const bestByLine = new Map<string, ImageUsageReference>()
+
+  references.forEach((reference) => {
+    const key = `${reference.filePath}:${reference.line}`
+    const current = bestByLine.get(key)
+
+    if (!current) {
+      bestByLine.set(key, reference)
+      return
+    }
+
+    if (reference.text.length > current.text.length) {
+      bestByLine.set(key, reference)
+      return
+    }
+
+    if (reference.text.length === current.text.length && reference.column < current.column) {
+      bestByLine.set(key, reference)
+    }
+  })
+
+  return Array.from(bestByLine.values()).sort((a, b) => {
+    if (a.filePath !== b.filePath) {
+      return a.filePath.localeCompare(b.filePath)
+    }
+    if (a.line !== b.line) {
+      return a.line - b.line
+    }
+    return a.column - b.column
+  })
 }
 
 export async function checkImageUsages(options: {
@@ -94,11 +192,13 @@ export async function checkImageUsages(options: {
 
   const normalizedTextFiles = textFiles.filter(filePath => !shouldIgnoreFile(filePath, imagePathSet))
 
-  const records = new Map<string, { references: Set<string>, candidates: string[] }>()
+  const records = new Map<string, { references: ImageUsageReference[], basename: string, exactCandidates: string[] }>()
   images.forEach((image) => {
+    const candidates = buildImageReferenceCandidates(image, projectRoot)
     records.set(image.path, {
-      references: new Set<string>(),
-      candidates: buildImageReferenceCandidates(image, projectRoot),
+      references: [],
+      basename: candidates.basename,
+      exactCandidates: candidates.exact,
     })
   })
 
@@ -118,18 +218,22 @@ export async function checkImageUsages(options: {
       if (!record)
         continue
 
-      if (record.references.has(normalizedFilePath))
-        continue
+      const exactReferences = collectExactReferences(normalizedFilePath, content, record.exactCandidates)
+      const basenameReferences = exactReferences.length
+        ? []
+        : collectBasenameReferences(normalizedFilePath, content, record.basename)
 
-      if (record.candidates.some(candidate => content.includes(candidate))) {
-        record.references.add(normalizedFilePath)
+      if (!exactReferences.length && !basenameReferences.length) {
+        continue
       }
+
+      record.references.push(...exactReferences, ...basenameReferences)
     }
   }
 
   const resultRecords = images.map<ImageUsageResult>((image) => {
     const record = records.get(image.path)
-    const references = Array.from(record?.references || [])
+    const references = dedupeReferences(record?.references || [])
 
     return {
       imagePath: image.path,

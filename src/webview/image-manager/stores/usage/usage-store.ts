@@ -8,6 +8,11 @@ export type UsageState = {
   scannedFileCount: number
   error: boolean
   records: Record<string, ImageUsageRecord>
+  lastSuccessfulResult?: {
+    lastCheckedAt: number
+    scannedFileCount: number
+    records: Record<string, ImageUsageRecord>
+  }
 }
 
 export enum UsageActionType {
@@ -25,6 +30,7 @@ const initialState: UsageState = {
   scannedFileCount: 0,
   error: false,
   records: {},
+  lastSuccessfulResult: undefined,
 }
 
 export const usageStateAtom = atomWithReducer(
@@ -51,26 +57,34 @@ export const usageStateAtom = atomWithReducer(
           status: 'checking',
           error: false,
         }
-      case UsageActionType.finish:
+      case UsageActionType.finish: {
+        const nextRecords = action.records.reduce<Record<string, ImageUsageRecord>>((acc, item) => {
+          acc[item.imagePath] = item
+          return acc
+        }, {})
         return {
           stale: false,
           status: 'completed',
           lastCheckedAt: Date.now(),
           scannedFileCount: action.scannedFileCount,
           error: false,
-          records: action.records.reduce<Record<string, ImageUsageRecord>>((acc, item) => {
-            acc[item.imagePath] = item
-            return acc
-          }, {}),
+          records: nextRecords,
+          lastSuccessfulResult: {
+            lastCheckedAt: Date.now(),
+            scannedFileCount: action.scannedFileCount,
+            records: nextRecords,
+          },
         }
+      }
       case UsageActionType.fail:
         return {
+          ...state,
           stale: false,
           status: 'completed',
-          lastCheckedAt: undefined,
-          scannedFileCount: 0,
           error: true,
-          records: {},
+          lastCheckedAt: state.lastSuccessfulResult?.lastCheckedAt,
+          scannedFileCount: state.lastSuccessfulResult?.scannedFileCount || 0,
+          records: state.lastSuccessfulResult?.records || {},
         }
       case UsageActionType.mark_stale:
         if (state.status === 'idle') {

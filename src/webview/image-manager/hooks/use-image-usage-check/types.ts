@@ -1,9 +1,16 @@
 export type ImageUsageStatus = 'idle' | 'checking' | 'completed'
 
+export type ImageUsageReference = {
+  filePath: string
+  line: number
+  column: number
+  text: string
+}
+
 export type ImageUsageResult = {
   imagePath: string
   status: 'used' | 'unused' | 'error'
-  references: string[]
+  references: ImageUsageReference[]
   matchedCount: number
 }
 
