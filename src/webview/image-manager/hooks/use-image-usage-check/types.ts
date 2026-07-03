@@ -19,6 +19,11 @@ export type ImageUsageScanResult = {
   scannedFileCount: number
 }
 
+export type ImageUsageScanOptions = {
+  include: string[]
+  exclude: string[]
+}
+
 export type ImageUsageRecord = ImageUsageResult & {
   image: ImageType
 }

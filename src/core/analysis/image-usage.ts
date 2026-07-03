@@ -1,3 +1,4 @@
+import type { ImageUsageScanOptions } from '~/webview/image-manager/hooks/use-image-usage-check/types'
 import path from 'node:path'
 import fs from 'fs-extra'
 import { globby } from 'globby'
@@ -123,7 +124,7 @@ function collectExactReferences(filePath: string, content: string, candidates: s
 
 function collectBasenameReferences(filePath: string, content: string, basename: string) {
   const references: ImageUsageReference[] = []
-  const pattern = new RegExp(`(?<![\\w./-])${escapeRegExp(basename)}(?![\\w./-])`, 'g')
+  const pattern = new RegExp(`${escapeRegExp(basename)}(?![\\w./-])`, 'g')
 
   while (true) {
     const match = pattern.exec(content)
@@ -172,8 +173,9 @@ function dedupeReferences(references: ImageUsageReference[]) {
 export async function checkImageUsages(options: {
   images: ImageType[]
   roots: string[]
+  scanOptions: ImageUsageScanOptions
 }) {
-  const { images, roots } = options
+  const { images, roots, scanOptions } = options
 
   const normalizedRoots = Array.from(new Set(roots.map(root => normalizePath(root))))
   const projectRoot = normalizedRoots.length > 1
@@ -181,12 +183,17 @@ export async function checkImageUsages(options: {
     : normalizedRoots[0]
 
   const imagePathSet = new Set(images.map(image => normalizePath(image.path)))
-  const textFiles = await globby(DEFAULT_SCAN_GLOBS, {
+  const includeGlobs = scanOptions.include.map(item => item.trim()).filter(Boolean)
+  const ignoreGlobs = [
+    ...DEFAULT_IGNORE_GLOBS,
+    ...scanOptions.exclude.map(item => item.trim()).filter(Boolean),
+  ]
+  const textFiles = await globby(includeGlobs.length ? includeGlobs : DEFAULT_SCAN_GLOBS, {
     cwd: projectRoot,
     absolute: true,
     onlyFiles: true,
     dot: false,
-    ignore: DEFAULT_IGNORE_GLOBS,
+    ignore: ignoreGlobs,
     gitignore: true,
   })
 

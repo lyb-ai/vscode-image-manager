@@ -1,7 +1,7 @@
 import type { MessageInstance } from 'antd/es/message/interface'
 import type { ReactNode } from 'react'
 import type { FileChangedResType } from '../stores/file/hooks'
-import type { ImageUsageScanResult } from './use-image-usage-check/types'
+import type { ImageUsageScanOptions, ImageUsageScanResult } from './use-image-usage-check/types'
 import type { OperatorResult } from '~/core/operator/operator'
 import { useLatest, useLockFn, useMemoizedFn } from 'ahooks'
 import { App, Button, Divider, Space, Typography } from 'antd'
@@ -37,6 +37,15 @@ import useRename from './use-rename/use-rename'
 
 const { Text } = Typography
 let isCheckingImageUsage = false
+
+export async function waitForMinimumLoadingDuration(startedAt: number, minimumDuration: number) {
+  const elapsed = Date.now() - startedAt
+  if (elapsed >= minimumDuration) {
+    return
+  }
+
+  await new Promise(resolve => setTimeout(resolve, minimumDuration - elapsed))
+}
 
 // eslint-disable-next-line react-refresh/only-export-components
 function UndoMessageContent(props: { list: string[], title: ReactNode }) {
@@ -230,13 +239,15 @@ function useImageOperation() {
     }
 
     showImageUsageCheck({
-      onScan: async (messageApi: MessageInstance) => {
+      onScan: async (messageApi: MessageInstance, scanOptions: ImageUsageScanOptions) => {
         if (isCheckingImageUsage || latestUsageStatus.current === 'checking') {
           return
         }
 
         isCheckingImageUsage = true
         const messageKey = 'image-usage-scan'
+        const minimumLoadingDuration = 500
+        const loadingStartedAt = Date.now()
         const payloadImages = images.map(image => ({
           basename: image.basename,
           name: image.name,
@@ -268,6 +279,7 @@ function useImageOperation() {
                 cmd: CmdToVscode.check_image_usages,
                 data: {
                   images: payloadImages,
+                  scanOptions,
                 },
               },
               (data) => {
@@ -288,6 +300,7 @@ function useImageOperation() {
           })
 
           if (records.some(item => item.status === 'error')) {
+            await waitForMinimumLoadingDuration(loadingStartedAt, minimumLoadingDuration)
             failUsageScan()
             messageApi.open({
               key: messageKey,
@@ -298,6 +311,7 @@ function useImageOperation() {
             return
           }
 
+          await waitForMinimumLoadingDuration(loadingStartedAt, minimumLoadingDuration)
           finishUsageScan(records, res.scannedFileCount)
           messageApi.open({
             key: messageKey,
@@ -307,6 +321,7 @@ function useImageOperation() {
           })
         }
         catch {
+          await waitForMinimumLoadingDuration(loadingStartedAt, minimumLoadingDuration)
           failUsageScan()
           messageApi.open({
             key: messageKey,

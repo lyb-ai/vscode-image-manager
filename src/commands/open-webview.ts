@@ -1,8 +1,7 @@
-import type { Uri } from 'vscode'
 import type { ExtensionModule } from '~/module'
 import path from 'node:path'
 import { isEqual, once, trim } from 'es-toolkit'
-import { commands, FileType, workspace } from 'vscode'
+import { commands, FileType, Uri, workspace } from 'vscode'
 import { Config } from '~/core/config/config'
 import { Global } from '~/core/global'
 import { Svgo } from '~/core/operator/svgo'
@@ -43,6 +42,14 @@ export default <ExtensionModule> function (ctx) {
       }
       else {
         rootPath = fsPath
+      }
+
+      // When opened via right-click, rootPath is the clicked target's directory.
+      // Resolve the actual workspace folder root to ensure downstream features
+      // (e.g. image usage scan) search from the correct project root.
+      const workspaceFolder = workspace.getWorkspaceFolder(Uri.file(rootPath))
+      if (workspaceFolder) {
+        rootPath = slashPath(workspaceFolder.uri.fsPath)
       }
 
       rootpaths = Global.resolveRootPath([rootPath])

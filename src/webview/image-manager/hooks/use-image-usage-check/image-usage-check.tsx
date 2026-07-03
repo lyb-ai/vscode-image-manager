@@ -1,5 +1,7 @@
 import type { MessageInstance } from 'antd/es/message/interface'
-import { Alert, Button, Divider, List, message, Space, Tag, Typography } from 'antd'
+import type { ImageUsageScanOptions } from './types'
+import { MoreOutlined } from '@ant-design/icons'
+import { Alert, Button, Divider, Input, List, message, Segmented, Space, Tag, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,8 +13,45 @@ import { useUsageState } from '../../stores/usage/hooks'
 
 const { Text } = Typography
 
+function parseUsageList(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getInitialScanFiltersExpanded(includeInput: string, excludeInput: string) {
+  return Boolean(includeInput.trim() || excludeInput.trim())
+}
+
+export type UsageEmptyState = 'on_demand' | 'scan_failed' | 'no_images' | 'no_search_results' | null
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getUsageEmptyState(args: {
+  hasScannedResult: boolean
+  hasFailedResult: boolean
+  recordsCount: number
+  filteredRecordsCount: number
+}): UsageEmptyState {
+  const { hasScannedResult, hasFailedResult, recordsCount, filteredRecordsCount } = args
+  if (!hasScannedResult) {
+    return 'on_demand'
+  }
+  if (hasFailedResult && !recordsCount) {
+    return 'scan_failed'
+  }
+  if (!recordsCount) {
+    return 'no_images'
+  }
+  if (!filteredRecordsCount) {
+    return 'no_search_results'
+  }
+  return null
+}
+
 type Props = {
-  onScan: (messageApi: MessageInstance) => Promise<void>
+  onScan: (messageApi: MessageInstance, scanOptions: ImageUsageScanOptions) => Promise<void>
 }
 
 function ImageUsageCheck(props: Props) {
@@ -21,42 +60,76 @@ function ImageUsageCheck(props: Props) {
   const usageState = useUsageState()
   const [messageApi, contextHolder] = message.useMessage()
   const [activePath, setActivePath] = useState<string>()
+  const [searchValue, setSearchValue] = useState('')
+  const [resultFilter, setResultFilter] = useState<'all' | 'used' | 'possibly_unused'>('all')
+  const [includeInput, setIncludeInput] = useState('')
+  const [excludeInput, setExcludeInput] = useState('')
+  const [showScanFilters, setShowScanFilters] = useState(() => getInitialScanFiltersExpanded('', ''))
 
   const isChecking = usageState.status === 'checking'
   const hasScannedResult = usageState.lastCheckedAt !== undefined
   const hasFailedResult = usageState.error
 
+  const scanOptions = useMemo<ImageUsageScanOptions>(() => {
+    return {
+      include: parseUsageList(includeInput),
+      exclude: parseUsageList(excludeInput),
+    }
+  }, [excludeInput, includeInput])
+
   const records = useMemo(
     () => Object.values(usageState.records).sort((a, b) => a.image.relativePath.localeCompare(b.image.relativePath)),
     [usageState.records],
   )
+  const hasError = useMemo(() => records.some(item => item.status === 'error'), [records])
+  const normalizedSearchValue = searchValue.trim().toLowerCase()
+  const filteredRecords = useMemo(() => {
+    return records.filter((item) => {
+      const matchesFilter = resultFilter === 'all'
+        || (resultFilter === 'used' && item.status === 'used')
+        || (resultFilter === 'possibly_unused' && item.status === 'unused')
+
+      if (!matchesFilter) {
+        return false
+      }
+
+      if (!normalizedSearchValue) {
+        return true
+      }
+
+      const keywords = [item.image.basename, item.image.relativePath, item.image.dirPath]
+        .filter(Boolean)
+        .map(value => value.toLowerCase())
+
+      return keywords.some(value => value.includes(normalizedSearchValue))
+    })
+  }, [normalizedSearchValue, records, resultFilter])
   const unusedRecords = useMemo(
-    () => records
+    () => filteredRecords
       .filter(item => item.status === 'unused')
       .sort((a, b) => a.image.relativePath.localeCompare(b.image.relativePath)),
-    [records],
+    [filteredRecords],
   )
   const usedRecords = useMemo(
-    () => records
+    () => filteredRecords
       .filter(item => item.status === 'used')
       .sort((a, b) => b.matchedCount - a.matchedCount || a.image.relativePath.localeCompare(b.image.relativePath)),
-    [records],
+    [filteredRecords],
   )
-  const hasError = useMemo(() => records.some(item => item.status === 'error'), [records])
   const activeRecord = activePath ? usageState.records[activePath] : undefined
 
   useEffect(() => {
-    if (!records.length) {
+    if (!filteredRecords.length) {
       setActivePath(undefined)
       return
     }
 
-    if (activePath && usageState.records[activePath]) {
+    if (activePath && filteredRecords.some(item => item.imagePath === activePath)) {
       return
     }
 
-    setActivePath(unusedRecords[0]?.imagePath || usedRecords[0]?.imagePath || records[0]?.imagePath)
-  }, [activePath, records, unusedRecords, usedRecords, usageState.records])
+    setActivePath(unusedRecords[0]?.imagePath || usedRecords[0]?.imagePath || filteredRecords[0]?.imagePath)
+  }, [activePath, filteredRecords, unusedRecords, usedRecords])
 
   const activeReferences = useMemo(() => {
     if (!activeRecord) {
@@ -85,37 +158,37 @@ function ImageUsageCheck(props: Props) {
   }, [hasScannedResult, records.length, t, usageState.scannedFileCount])
 
   const emptyContent = useMemo(() => {
-    if (!hasScannedResult) {
-      return (
-        <EmptyImage render={description => (
-          <span>
-            {description}
-            {' '}
-            ·
-            {' '}
-            {t('im.usage_scan_on_demand')}
-          </span>
-        )}
-        />
-      )
+    switch (getUsageEmptyState({
+      hasScannedResult,
+      hasFailedResult,
+      recordsCount: records.length,
+      filteredRecordsCount: filteredRecords.length,
+    })) {
+      case 'on_demand':
+        return (
+          <EmptyImage render={description => (
+            <span>
+              {description}
+              {' '}
+              ·
+              {' '}
+              {t('im.usage_scan_on_demand')}
+            </span>
+          )}
+          />
+        )
+      case 'scan_failed':
+        return <EmptyImage render={() => t('im.usage_scan_failed')} />
+      case 'no_images':
+        return <EmptyImage render={() => t('im.no_images_to_scan')} />
+      case 'no_search_results':
+        return <EmptyImage render={() => t('im.no_search_results')} />
+      default:
+        return null
     }
+  }, [filteredRecords.length, hasFailedResult, hasScannedResult, records.length, t])
 
-    if (hasFailedResult) {
-      return <EmptyImage render={() => t('im.usage_scan_failed')} />
-    }
-
-    if (!records.length) {
-      return <EmptyImage render={() => t('im.no_images_to_scan')} />
-    }
-
-    if (!usageState.scannedFileCount) {
-      return <EmptyImage render={() => t('im.no_scannable_files_found')} />
-    }
-
-    return null
-  }, [hasFailedResult, hasScannedResult, records.length, t, usageState.scannedFileCount])
-
-  const shouldShowResultPanel = records.length > 0 && usageState.scannedFileCount > 0
+  const shouldShowResultPanel = filteredRecords.length > 0
 
   return (
     <>
@@ -131,16 +204,46 @@ function ImageUsageCheck(props: Props) {
             </Text>
             {summaryDescription && <Text type='secondary'>{summaryDescription}</Text>}
           </div>
-          <Button type='primary' loading={isChecking} onClick={() => void onScan(messageApi)}>
-            {hasScannedResult ? t('im.rescan') : t('im.scan')}
-          </Button>
+          <Space>
+            <Button
+              icon={<MoreOutlined />}
+              onClick={() => setShowScanFilters(value => !value)}
+              aria-label={t('im.toggle_options')}
+            />
+            <Button type='primary' loading={isChecking} onClick={() => void onScan(messageApi, scanOptions)}>
+              {hasScannedResult ? t('im.rescan') : t('im.scan')}
+            </Button>
+          </Space>
         </Space>
+
+        {showScanFilters && (
+          <Space direction='vertical' className='w-full' size='small'>
+            <div className='flex flex-col gap-1'>
+              <Text type='secondary'>{t('im.files_to_include')}</Text>
+              <Input
+                value={includeInput}
+                onChange={e => setIncludeInput(e.target.value)}
+                placeholder={t('im.include_glob_placeholder')}
+              />
+            </div>
+            <div className='flex flex-col gap-1'>
+              <Text type='secondary'>{t('im.files_to_exclude')}</Text>
+              <Input
+                value={excludeInput}
+                onChange={e => setExcludeInput(e.target.value)}
+                placeholder={t('im.exclude_glob_placeholder')}
+              />
+            </div>
+          </Space>
+        )}
 
         {usageState.stale && (
           <Alert
             type='warning'
             showIcon
             message={t('im.usage_results_may_be_outdated')}
+            description={t('im.usage_rescan_recommended')}
+            action={<Button size='small' type='primary' loading={isChecking} onClick={() => void onScan(messageApi, scanOptions)}>{t('im.rescan')}</Button>}
           />
         )}
 
@@ -148,32 +251,61 @@ function ImageUsageCheck(props: Props) {
           <Alert type='error' showIcon message={t('im.usage_scan_failed')} />
         )}
 
+        {hasScannedResult && !hasFailedResult && records.length > 0 && !usageState.scannedFileCount && (
+          <Alert
+            type='info'
+            showIcon
+            message={t('im.no_scannable_files_found')}
+            description={t('im.no_scannable_files_found_description')}
+          />
+        )}
+
         {(hasScannedResult || records.length > 0) && (
-          <Space wrap>
-            <Tag>
-              {t('im.total_images')}
-              :
-              {' '}
-              {records.length}
-            </Tag>
-            <Tag>
-              {t('im.scanned_files')}
-              :
-              {' '}
-              {usageState.scannedFileCount}
-            </Tag>
-            <Tag color='success'>
-              {t('im.used')}
-              :
-              {' '}
-              {usedRecords.length}
-            </Tag>
-            <Tag color='warning'>
-              {t('im.possibly_unused')}
-              :
-              {' '}
-              {unusedRecords.length}
-            </Tag>
+          <Space direction='vertical' className='w-full' size='small'>
+            <Space wrap>
+              <Tag>
+                {t('im.total_images')}
+                :
+                {' '}
+                {records.length}
+              </Tag>
+              <Tag>
+                {t('im.scanned_files')}
+                :
+                {' '}
+                {usageState.scannedFileCount}
+              </Tag>
+              <Tag color='success'>
+                {t('im.used')}
+                :
+                {' '}
+                {usedRecords.length}
+              </Tag>
+              <Tag color='warning'>
+                {t('im.possibly_unused')}
+                :
+                {' '}
+                {unusedRecords.length}
+              </Tag>
+            </Space>
+            <Space wrap className='w-full justify-between'>
+              <Segmented
+                value={resultFilter}
+                onChange={value => setResultFilter(value as 'all' | 'used' | 'possibly_unused')}
+                options={[
+                  { label: t('im.all_results'), value: 'all' },
+                  { label: t('im.used'), value: 'used' },
+                  { label: t('im.possibly_unused'), value: 'possibly_unused' },
+                ]}
+              />
+              <Input
+                allowClear
+                value={searchValue}
+                onChange={e => setSearchValue(e.target.value)}
+                placeholder={t('im.search_usage_results')}
+                className='w-full max-w-80'
+              />
+            </Space>
           </Space>
         )}
 
@@ -239,6 +371,7 @@ function ImageUsageCheck(props: Props) {
                                         type='link'
                                         className='!px-0'
                                         onClick={() => {
+                                          setActivePath(activeRecord.imagePath)
                                           vscodeApi.postMessage({
                                             cmd: CmdToVscode.open_file_in_text_editor,
                                             data: {

@@ -6,6 +6,7 @@ import type { CompressionOptions } from '~/core/operator/compressor/type'
 import type { FormatConverterOptions } from '~/core/operator/format-converter'
 import type { OperatorResult } from '~/core/operator/operator'
 import type { WorkspaceStateKey } from '~/core/persist/workspace/common'
+import type { ImageUsageScanOptions } from '~/webview/image-manager/hooks/use-image-usage-check/types'
 import type { ImageManagerPanel } from '~/webview/panel'
 import { Buffer } from 'node:buffer'
 import os from 'node:os'
@@ -331,6 +332,7 @@ export const VscodeMessageFactory = {
   [CmdToVscode.check_image_usages]: async (
     data: {
       images: ImageType[]
+      scanOptions: ImageUsageScanOptions
     },
     imageManagerPanel: ImageManagerPanel,
   ) => {
@@ -338,6 +340,7 @@ export const VscodeMessageFactory = {
       return await checkImageUsages({
         images: data.images,
         roots: imageManagerPanel.initialData.rootpaths || [],
+        scanOptions: data.scanOptions,
       })
     }
     catch (e) {
